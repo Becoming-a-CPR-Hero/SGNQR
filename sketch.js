@@ -1491,6 +1491,27 @@ window.onload = () => {
         cprC4aud.stop();
         [t1, t2, t3, t4, t5, t6, tOkOk, tHmHm].forEach(t => clearTimeout(t));
     };
+    // Binds one handler to both touch and mouse without letting a single
+    // tap fire it twice. Every cpr-step "next" button sits in the exact
+    // same screen position on the step that follows it, so the old
+    // touchstart+click pairing (touchstart advances the screen, then the
+    // browser's compatibility "click" fires ~afterwards and lands on the
+    // NEXT screen's button in that same spot) could silently skip a step.
+    // preventDefault on touchstart stops that ghost click from firing at
+    // all, and the timestamp guard is a second safety net for
+    // devices/browsers that still send both.
+    const bindTap = (el, handler) => {
+        let lastFired = 0;
+        const fire = (e) => {
+            const now = Date.now();
+            if (now - lastFired < 500) return;
+            lastFired = now;
+            if (e && e.cancelable) e.preventDefault();
+            handler();
+        };
+        el.addEventListener('touchstart', fire, { passive: false });
+        el.addEventListener('click', fire);
+    };
     const handleNextC1 = () => {
         clearTimeout(t1);
         stopAllCPRAudio();
@@ -1498,8 +1519,7 @@ window.onload = () => {
         cpr1.style.display = "none";
         cpr2.style.display = "flex";
     };
-    nextc1.onclick = handleNextC1;
-    nextc1.addEventListener('touchstart', handleNextC1);
+    bindTap(nextc1, handleNextC1);
     const handleNextC2 = () => {
         clearTimeout(t1); clearTimeout(t2);
         stopAllCPRAudio();
@@ -1507,8 +1527,7 @@ window.onload = () => {
         cpr2.style.display = "none";
         cpr3.style.display = "flex";
     };
-    nextc2.onclick = handleNextC2;
-    nextc2.addEventListener('touchstart', handleNextC2);
+    bindTap(nextc2, handleNextC2);
     const handleNextC3 = () => {
         clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
         stopAllCPRAudio();
@@ -1516,8 +1535,7 @@ window.onload = () => {
         cpr3.style.display = "none";
         cpr4.style.display = "flex";
     };
-    nextc3.onclick = handleNextC3;
-    nextc3.addEventListener('touchstart', handleNextC3);
+    bindTap(nextc3, handleNextC3);
     const handleNextC4 = () => {
         clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4);
         stopAllCPRAudio();
@@ -1525,8 +1543,7 @@ window.onload = () => {
         cpr4.style.display = "none";
         cpr5.style.display = "flex";
     };
-    nextc4.onclick = handleNextC4;
-    nextc4.addEventListener('touchstart', handleNextC4);
+    bindTap(nextc4, handleNextC4);
     const handleStartCPR = () => {
         clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
         clearTimeout(t4); clearTimeout(t5);
@@ -1926,7 +1943,11 @@ function playScreen() {
     rotate(-HALF_PI);
     textAlign(CENTER, TOP);
     textSize(23);
-    fill(250, 50, 60);
+    if (bpm >= 100 && bpm <= 120) {
+        fill(3, 134, 96);   // green — within the recommended 100-120 bpm range
+    } else {
+        fill(250, 50, 60); // red — too slow or too fast
+    }
     text(round(bpm), 0, 0);
     pop();
     push();
