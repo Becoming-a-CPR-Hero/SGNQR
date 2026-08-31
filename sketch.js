@@ -108,7 +108,7 @@ let responseTimeout = null;
 let breathScenario = "none"; // "none" | "abnormal" | "normal" — set by nextBreathScenario()
 let breathTimerInterval = null; // holds the setInterval id for the checkbreathing countdown badge
 let dialedNumber = ''; // <-- Dial Pad Variable
-let t1, t2, t3, t4, t5,t6;
+let t1, t2;
 let tOkOk, tHmHm; // timers for the "ok ok" / "hm hm" filler audio after pressing speaker
 let canvas;
 let canvasActive = false;
@@ -671,6 +671,55 @@ window.onload = () => {
     cpr3 = document.getElementById("cpr3");
     cpr4 = document.getElementById("cpr4");
     cpr5 = document.getElementById("cpr5");
+
+    // ========================================
+    // CPR STEP TIMELINE (cpr1 -> cpr2 -> cpr3 -> cpr4 -> cpr5)
+    // Single shared timer/function drives BOTH the automatic advance and
+    // the manual "next" buttons. Previously each step was a hand-written
+    // nested setTimeout, and pressing "next" called stopAllCPRAudio(),
+    // which cleared every pending timer in the whole chain — so after one
+    // manual tap, none of the later steps had anything left to
+    // auto-advance them (the screen would just sit there until the next
+    // manual tap). Routing both paths through goToCprStep() means there
+    // is only ever one live timer, and every path (auto or manual)
+    // re-arms it, so the chain can never be orphaned. It also drives the
+    // step dots directly, so they can never fall out of sync with the
+    // screen that's actually showing.
+    // ========================================
+    let cprStepTimer = null;
+    const CPR_STEP_DELAY = 8000;
+    const cprSteps = [
+        { screen: cpr1, audio: cprC1aud },
+        { screen: cpr2, audio: cprC2aud },
+        { screen: cpr3, audio: cprC3aud },
+        { screen: cpr4, audio: cprC4aud },
+    ];
+
+    function updateCprDots(index) {
+        const step = cprSteps[index];
+        if (!step) return;
+        const dots = step.screen.querySelectorAll('.cprDot');
+        dots.forEach((dot, i) => dot.classList.toggle('active', i === index));
+    }
+
+    function goToCprStep(index) {
+        clearTimeout(cprStepTimer);
+        cprSteps.forEach(s => { s.audio.stop(); s.screen.style.display = "none"; });
+
+        if (index >= cprSteps.length) {
+            cpr5.style.display = "flex";
+            cprBeginaud.play();
+            return;
+        }
+
+        const step = cprSteps[index];
+        step.screen.style.display = "flex";
+        step.audio.play();
+        updateCprDots(index);
+
+        cprStepTimer = setTimeout(() => goToCprStep(index + 1), CPR_STEP_DELAY);
+    }
+
     p5Screen = document.getElementById("p5Screen");
     win = document.getElementById("win");
     promisewraja = document.getElementById("promisewraja");
@@ -1094,7 +1143,7 @@ window.onload = () => {
 
     // "Yes" — same shortcut as before: skip straight to cpr5.
     const handleProtocolYes = () => {
-        [t1, t2, t3, t4, t5, t6, tOkOk, tHmHm].forEach(t => clearTimeout(t));
+        [t1, t2, tOkOk, tHmHm, cprStepTimer].forEach(t => clearTimeout(t));
         protocolCheckModal.style.display = "none";
         begin1.style.display = "none";
         intro.style.display = "none";
@@ -1449,32 +1498,9 @@ window.onload = () => {
             addspeakeraud.stop();
             t2 = setTimeout(() => {
                 victiminca.style.display = "none";
-                cpr1.style.display = "flex";
-                cprC1aud.play();
-                t3 = setTimeout(() => {
-                    cpr1.style.display = "none";
-                    cpr2.style.display = "flex";
-                    cprC2aud.play();
-                    cprC1aud.stop();
-                    t4 = setTimeout(() => {
-                        cpr2.style.display = "none";
-                        cpr3.style.display = "flex";
-                        cprC3aud.play();
-                        cprC2aud.stop();
-                        t5 = setTimeout(() => {
-                            cpr3.style.display = "none";
-                            cpr4.style.display = "flex";
-                            cprC4aud.play();
-                            cprC3aud.stop();
-                            t6 = setTimeout(() => {
-                                cpr4.style.display = "none";
-                                cpr5.style.display = "flex";
-                                cprBeginaud.play();
-                                cprC4aud.stop();
-                            }, 8000);
-                        }, 8000);
-                    }, 8000);
-                }, 8000);
+                // Hand off to the shared CPR step timeline (cpr1 -> cpr4 -> cpr5),
+                // which drives both the auto-advance and the manual next buttons.
+                goToCprStep(0);
             }, 8000);
         }, 10000);
     };
@@ -1489,17 +1515,12 @@ window.onload = () => {
         cprC2aud.stop();
         cprC3aud.stop();
         cprC4aud.stop();
-        [t1, t2, t3, t4, t5, t6, tOkOk, tHmHm].forEach(t => clearTimeout(t));
+        [t1, t2, tOkOk, tHmHm, cprStepTimer].forEach(t => clearTimeout(t));
     };
     // Binds one handler to both touch and mouse without letting a single
-    // tap fire it twice. Every cpr-step "next" button sits in the exact
-    // same screen position on the step that follows it, so the old
-    // touchstart+click pairing (touchstart advances the screen, then the
-    // browser's compatibility "click" fires ~afterwards and lands on the
-    // NEXT screen's button in that same spot) could silently skip a step.
-    // preventDefault on touchstart stops that ghost click from firing at
-    // all, and the timestamp guard is a second safety net for
-    // devices/browsers that still send both.
+    // tap fire it twice — a defensive extra on top of the shared timeline
+    // above, in case a device fires both touchstart and a follow-up
+    // "ghost" click for the same tap.
     const bindTap = (el, handler) => {
         let lastFired = 0;
         const fire = (e) => {
@@ -1513,40 +1534,31 @@ window.onload = () => {
         el.addEventListener('click', fire);
     };
     const handleNextC1 = () => {
-        clearTimeout(t1);
+        clearTimeout(t1); clearTimeout(t2);
         stopAllCPRAudio();
-        cprC2aud.play();
-        cpr1.style.display = "none";
-        cpr2.style.display = "flex";
+        goToCprStep(1);
     };
     bindTap(nextc1, handleNextC1);
     const handleNextC2 = () => {
         clearTimeout(t1); clearTimeout(t2);
         stopAllCPRAudio();
-        cprC3aud.play();
-        cpr2.style.display = "none";
-        cpr3.style.display = "flex";
+        goToCprStep(2);
     };
     bindTap(nextc2, handleNextC2);
     const handleNextC3 = () => {
-        clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
+        clearTimeout(t1); clearTimeout(t2);
         stopAllCPRAudio();
-        cprC4aud.play();
-        cpr3.style.display = "none";
-        cpr4.style.display = "flex";
+        goToCprStep(3);
     };
     bindTap(nextc3, handleNextC3);
     const handleNextC4 = () => {
-        clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); clearTimeout(t4);
+        clearTimeout(t1); clearTimeout(t2);
         stopAllCPRAudio();
-        cprBeginaud.play();
-        cpr4.style.display = "none";
-        cpr5.style.display = "flex";
+        goToCprStep(4);
     };
     bindTap(nextc4, handleNextC4);
     const handleStartCPR = () => {
-        clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
-        clearTimeout(t4); clearTimeout(t5);
+        clearTimeout(t1); clearTimeout(t2); clearTimeout(cprStepTimer);
         cpr5.style.display = "none";
         p5Screen.style.display = "flex";
         // Wait a frame so #p5Screen has actually been laid out (and
@@ -1644,7 +1656,7 @@ window.onload = () => {
         callBtn.disabled = true;
         callBtn.style.opacity = 0.5;
         userStartAudio();
-        [t1, t2, t3, t4, t5, t6, tOkOk, tHmHm].forEach(t => clearTimeout(t));
+        [t1, t2, tOkOk, tHmHm, cprStepTimer].forEach(t => clearTimeout(t));
         begin1.style.display = "none";
         intro.style.display = "none";
         cpr4.style.display = "none";
