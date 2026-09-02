@@ -100,7 +100,7 @@ let postAnswers = {
 };
 let postQ7Photo = null;
 let photoBase64 = "";
-
+const DEBOUNCE_TIME = 300; // milliseconds
 let genderState = null;   // 1 = Raja, 0 = Rani
 let mic;
 let listeningForResponse = false;
@@ -1920,20 +1920,40 @@ function draw() {
 function mousePressed() {
     userStartAudio();
     pressed_time = millis();
+
     if (currentState == "play") {
+
+        now = millis();
+
+        // Debounce: ignore touches that happen too soon
+        // after the previous accepted touch
+        if (lastTouchTime !== 0 && 
+            (now - lastTouchTime) < DEBOUNCE_TIME) {
+            
+            console.log("Duplicate touch ignored");
+            return;
+        }
+
         press_music.play();
+
         compression_count += 1;
         console.log(compression_count);
-        now = millis();
+
         if (lastTouchTime !== 0) {
             interval = now - lastTouchTime;
+
             let calculatedBPM = 60000 / interval;
+
             bpm = calculatedBPM;
+
             console.log(bpm);
+
             bpmSum += calculatedBPM;
             bpmSampleCount += 1;
         }
+
         lastTouchTime = now;
+
         handle_live();
     }
 }
